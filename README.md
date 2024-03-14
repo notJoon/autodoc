@@ -1,2 +1,3 @@
 # autodoc
-automatic md file generator for gno
+
+Tree-sitter based automatic markdown code document generator for gno
