@@ -2,79 +2,52 @@ package analyzer
 
 import (
 	"context"
-	"reflect"
 	"testing"
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/golang"
+	"github.com/stretchr/testify/assert"
 )
 
-func TestWalkTree(t *testing.T) {
+func TestPublicSymbolsCollector(t *testing.T) {
+	sourceCode := `
+package example
+
+// Add adds two integers.
+// 
+// It returns the sum of two integers.
+func Add(a, b int) int {
+	return a + b
+}
+
+const Pi = 3.14
+
+var ExportedVar = "exported"
+`
+
 	parser := sitter.NewParser()
+	defer parser.Close()
+
 	parser.SetLanguage(golang.GetLanguage())
 
-	code := `
-		// Some comment
-		func main() {
-			fmt.Println("Hello, World!")
-		}
-
-		// Public function comment
-		func Foo() {
-			fmt.Println("public")
-		}
-
-		// Private function comment
-		func bar() {
-			fmt.Println("private")
-		}
-
-		// Public constants
-		const (
-			PublicConst1 = 1
-			publicConst2 = 2
-			PublicConst3 = 3
-		)
-
-		// Private constants
-		const (
-			privateConst1 = 4
-			privateConst2 = 5
-		)
-
-		// Public variables
-		var (
-			PublicVar1 int
-			PublicVar2 string
-		)
-
-		// Private variables
-		var (
-			privateVar1 bool
-			privateVar2 float64
-		)
-	`
-
-	tree, err := parser.ParseCtx(context.Background(), nil, []byte(code))
+	tree, err := parser.ParseCtx(context.Background(), nil, []byte(sourceCode))
 	if err != nil {
-		t.Fatalf("Failed to parse code: %s", err)
+		t.Fatal(err)
 	}
+	defer tree.Close()
 
-	n := tree.RootNode()
-	res := WalkTreeNode(n, code)
+	collector := NewPublicSymbolsCollector(sourceCode)
+	symbols := collector.Collect(tree.RootNode())
 
-	expectedFunctions := []string{"Foo"}
-	if !reflect.DeepEqual(res.Functions, expectedFunctions) {
-		t.Errorf("Expected functions %v, got %v", expectedFunctions, res.Functions)
-	}
+	expectedFuncs := []FuncInfo{{Ident: "Add", Comments: []string{
+		"// Add adds two integers.",
+		"// ",
+		"// It returns the sum of two integers.",
+	}}}
+	expectedConsts := []string{"Pi"}
+	expectedVars := []string{"ExportedVar"}
 
-	expectedConstants := []string{"PublicConst1", "PublicConst3"}
-	if !reflect.DeepEqual(res.Constants, expectedConstants) {
-		t.Errorf("Expected constants %v, got %v", expectedConstants, res.Constants)
-	}
-
-	expectedVariables := []string{"PublicVar1", "PublicVar2"}
-	if !reflect.DeepEqual(res.Variables, expectedVariables) {
-		t.Errorf("Expected variables %v, got %v", expectedVariables, res.Variables)
-	}
+	assert.Equal(t, expectedFuncs, symbols.Functions, "should correctly extract public functions")
+	assert.Equal(t, expectedConsts, symbols.Constants, "should correctly extract public constants")
+	assert.Equal(t, expectedVars, symbols.Variables, "should correctly extract public variables")
 }
