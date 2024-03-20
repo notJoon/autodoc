@@ -43,8 +43,8 @@ func main() {
 	}
 
 	n := tree.RootNode()
-	res := analyzer.WalkTreeNode(n, 0, code)
-	for _, r := range res {
+	res := analyzer.WalkTreeNode(n, string(code))
+	for _, r := range res.Functions {
 		println(r)
 	}
 }
