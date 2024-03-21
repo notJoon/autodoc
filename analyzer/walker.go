@@ -9,7 +9,7 @@ import (
 // FuncInfo stores function name and comments associated with it.
 //
 // comments must be positioned above the function declaration
-// and should be sequential.
+// and should be sequential and non split by whitespace (e.g. newlines without comment token).
 type FuncInfo struct {
 	Ident    string   // function name (identifier)
 	Comments []string // comments associated with the function
@@ -36,25 +36,28 @@ type PublicSymbolsCollector struct {
 
 // Collect traverses the AST and collects public symbols.
 func (psc *PublicSymbolsCollector) Collect(n *sitter.Node) PublicSymbols {
-	var symbols PublicSymbols
-	var queue []*sitter.Node
+	var (
+        symbols PublicSymbols
+        queue []*sitter.Node
+    )
+
 	queue = append(queue, n)
 
 	for len(queue) > 0 {
-		current := queue[0]
+		curr := queue[0]
 		queue = queue[1:]
 
-		switch current.Type() {
+		switch curr.Type() {
 		case "function_declaration":
-			symbols.Functions = append(symbols.Functions, psc.findPublicFunctions(current)...)
+			symbols.Functions = append(symbols.Functions, psc.findPublicFunctions(curr)...)
 		case "const_declaration":
-			symbols.Constants = append(symbols.Constants, psc.findPublicSymbols(current)...)
+			symbols.Constants = append(symbols.Constants, psc.findPublicSymbols(curr)...)
 		case "var_declaration":
-			symbols.Variables = append(symbols.Variables, psc.findPublicSymbols(current)...)
+			symbols.Variables = append(symbols.Variables, psc.findPublicSymbols(curr)...)
 		}
 
-		for i := 0; i < int(current.ChildCount()); i++ {
-			queue = append(queue, current.Child(i))
+		for i := 0; i < int(curr.ChildCount()); i++ {
+			queue = append(queue, curr.Child(i))
 		}
 	}
 
@@ -62,8 +65,7 @@ func (psc *PublicSymbolsCollector) Collect(n *sitter.Node) PublicSymbols {
 }
 
 // collectComments collects comments associated with the given node.
-func (psc *PublicSymbolsCollector) collectComments(n *sitter.Node) []string {
-	var comments []string
+func (psc *PublicSymbolsCollector) collectComments(n *sitter.Node) (comments []string) {
 	prev := n.PrevNamedSibling()
 	for prev != nil && prev.Type() == "comment" {
 		comments = append([]string{prev.Content([]byte(psc.code))}, comments...)
@@ -75,29 +77,28 @@ func (psc *PublicSymbolsCollector) collectComments(n *sitter.Node) []string {
 // findPublicFunctions traverses the given node and finds public functions.
 // To find public functions, it looks for function_declaration nodes
 // and checks if the function name is public (starts with an uppercase letter).
-func (psc *PublicSymbolsCollector) findPublicFunctions(n *sitter.Node) []FuncInfo {
-    var publicFunctions []FuncInfo
+func (psc *PublicSymbolsCollector) findPublicFunctions(n *sitter.Node) (pubfns []FuncInfo) {
     if n.Type() != "function_declaration" {
-        return publicFunctions
+        return pubfns
     }
 
-    funcNameNode := n.ChildByFieldName("name")
-    if funcNameNode == nil {
-        return publicFunctions
+    nn := n.ChildByFieldName("name")
+    if nn == nil {
+        return pubfns
     }
 
-    funcName := funcNameNode.Content([]byte(psc.code))
-    if !unicode.IsUpper(rune(funcName[0])) {
-        return publicFunctions
+    ident := nn.Content([]byte(psc.code))
+    if !unicode.IsUpper(rune(ident[0])) {
+        return pubfns
     }
 
     comments := psc.collectComments(n)
-    publicFunctions = append(publicFunctions, FuncInfo{
-        Ident:    funcName,
+    pubfns = append(pubfns, FuncInfo{
+        Ident:    ident,
         Comments: comments,
     })
 
-    return publicFunctions
+    return pubfns
 }
 
 // findPublicSymbols traverses the given node and finds public symbols.
@@ -106,18 +107,16 @@ func (psc *PublicSymbolsCollector) findPublicFunctions(n *sitter.Node) []FuncInf
 // To find public constants and variables, it looks for const_declaration
 // and var_declaration nodes and checks if the symbol name is public
 // (starts with an uppercase letter).
-func (psc *PublicSymbolsCollector) findPublicSymbols(n *sitter.Node) []string {
-    var publicSymbols []string
-
+func (psc *PublicSymbolsCollector) findPublicSymbols(n *sitter.Node) (pubsyms []string) {
     switch n.Type() {
     case "const_declaration", "var_declaration":
         for i := 0; i < int(n.NamedChildCount()); i++ {
             child := n.NamedChild(i)
-            publicSymbols = appendPublicSymbols(publicSymbols, findPublicSymbolsInNode(child, []byte(psc.code)))
+            pubsyms = appendPublicSymbols(pubsyms, findPublicSymbolsInNode(child, []byte(psc.code)))
         }
     }
 
-    return publicSymbols
+    return pubsyms
 }
 
 // findPublicSymbols traverses the given node and finds public symbols.
@@ -126,8 +125,7 @@ func (psc *PublicSymbolsCollector) findPublicSymbols(n *sitter.Node) []string {
 // To find public constants and variables, it looks for const_declaration
 // and var_declaration nodes and checks if the symbol name is public
 // (starts with an uppercase letter).
-func findPublicSymbolsInNode(n *sitter.Node, code []byte) []string {
-    var publicSymbols []string
+func findPublicSymbolsInNode(n *sitter.Node, code []byte) (pubsyms []string) {
     for i := 0; i < int(n.NamedChildCount()); i++ {
         nameNode := n.NamedChild(i)
         if nameNode == nil {
@@ -136,10 +134,10 @@ func findPublicSymbolsInNode(n *sitter.Node, code []byte) []string {
 
         name := nameNode.Content(code)
         if unicode.IsUpper(rune(name[0])) {
-            publicSymbols = append(publicSymbols, name)
+            pubsyms = append(pubsyms, name)
         }
     }
-    return publicSymbols
+    return pubsyms
 }
 
 func appendPublicSymbols(dest, src []string) []string {
